@@ -1,18 +1,16 @@
 # Team Information
 
-**Course:** _[fill your course code and name]_
+**Course:** IA Course - UPF 
 
-**Semester:** Semester 2, 2020
+**Semester:** Semester 1, 2025
 
-**Instructor:** _[name of your instructor]_
+**Instructor:** Anders Jhonson
 
 **Team name:** _[replace this with team name in plan text]_
 
-**Team members:**
+**Team members:** 
 
-* Student 1's Student number - Full Name - Student email - Student Github id
-* Student 2's Student number - Full Name - Student email - Student Github id
-* Student 3's Student number - Full Name - Student email - Student Github id
+* Student 1's U149700- -Arnau Ruiz González - arnau.ruiz02@estudiant.upf.edu - Student Github id
 
 Replace the lines above with the correct details of members. Delete or add lines as needed.
 
