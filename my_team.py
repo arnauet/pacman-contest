@@ -331,24 +331,24 @@ def get_agent_zone(index):
 # Team creation #
 #################
 
+"""
 def create_team(first_index, second_index, is_red,
                 first='OffensiveReflexAgent', second='DefensiveReflexAgent', num_training=0):
-    """
+    """ """
     This function should return a list of two agents that will form the
     team, initialized using firstIndex and secondIndex as their agent
     index numbers.  isRed is True if the red team is being created, and
     will be False if the blue team is being created.
 
-    As a potentially helpful development aid, this function can take
-    additional string-valued keyword arguments ("first" and "second" are
-    such arguments in the case of this function), which will come from
-    the --red_opts and --blue_opts command-line arguments to capture.py.
-    For the nightly contest, however, your team will be created without
-    any extra arguments, so you should make sure that the default
-    behavior is what you want for the nightly contest.
-    """
+    """ """
     return [eval(first)(first_index), eval(second)(second_index)]
+"""
 
+
+def create_team(first_index, second_index, is_red,
+                first='OffensiveReflexAgent', second='DefensiveReflexAgent', num_training=0):
+    # DEBUG: both offensive class
+    return [DefensiveReflexAgent(first_index), OffensiveReflexAgent(second_index)]
 
 ##########
 # Agents #
@@ -445,10 +445,10 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
     
     #thresholds/limits  for planning decisions!!!
     
-    CARRY_THRESHOLD = 4       #the food to caarry before returning home
-    FOOD_LEFT_THRESHOLD = 4   #remainiing food to trigger return
-    GHOST_DANGER_DIST = 3     #distance to consider ghost dangerous
-    CAPSULE_TRIGGER_DIST = 4  #ghoost distance to trigger capsule plan
+    CARRY_THRESHOLD = 3     #the food to caarry before returning home
+    FOOD_LEFT_THRESHOLD = 6    #remainiing food to trigger return
+    GHOST_DANGER_DIST = 3   #distance to consider ghost dangerous
+    CAPSULE_TRIGGER_DIST = 6   #ghoost distance to trigger capsule plan
     
     def register_initial_state(self, game_state):
         
@@ -460,6 +460,13 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         self.boundary_positions = self._calculate_boundary(game_state)
         self.walls = game_state.get_walls()
         
+        width = self.walls.width
+        
+        if self.red:
+            self.enemy_boundary_x = width // 2  #boundary
+        else:
+            self.enemy_boundary_x = width // 2 - 1
+        
         #our game state planning attributes
         self.plan = []             #list of actions to follow
         self.plan_mode = None    #return_home', 'capsule'..
@@ -467,7 +474,16 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         
         #coordination attributes
         self.my_zone = get_agent_zone(self.index)  # 'top' or 'bottom'
+        
+        team_indices = self.get_team(game_state)
+        
+        if self.index == team_indices[0]:
+            self.my_zone = 'top'
+        else:
+            self.my_zone = 'bottom' #second agent created assigned bottom
+            
         self.turns = 0
+        #self.turns = 0
         
         #we dont lose one agent allways defending
         self.attack_turns = 80  #both agents attack during first mturns
@@ -573,8 +589,7 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         num_carrying = my_state.num_carrying
         
         #return if carrying enough food or few food left
-        return (num_carrying >= self.CARRY_THRESHOLD or 
-                (num_carrying > 0 and food_left <= self.FOOD_LEFT_THRESHOLD))
+        return (num_carrying >= self.CARRY_THRESHOLD )
     
     def _should_get_capsule(self, game_state, my_state, my_pos, dangerous_ghosts):
         """
@@ -674,6 +689,16 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         max_value = max(values)
         best_actions = [a for a, v in zip(actions, values) if v == max_value]
         
+        # DEBUGG
+        my_pos = game_state.get_agent_state(self.index).get_position()
+        print(f"Agent {self.index} at {my_pos}, is_pacman={game_state.get_agent_state(self.index).is_pacman}")
+        
+        for a, v in zip(actions, values):
+            print(f"  {a}: {v:.1f}")
+        
+        if Directions.STOP in best_actions and len(best_actions) > 1:
+            best_actions.remove(Directions.STOP)
+        
         return random.choice(best_actions)
         
     def _dist_to_boundary(self, pos):
@@ -710,17 +735,37 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         #encouraging exploring the map
         
         if action == current_direction and action != Directions.STOP:
-            features['forward'] = 1.0
+            features['forward'] = 2.5
         
-        #distance to food - prefer food in my zone
-        
+        #if we are still ghost go around
+        if not my_state.is_pacman:
+            if self.red:
+                dist_to_enemy = self.enemy_boundary_x - my_pos[0]
+            else:
+                dist_to_enemy = my_pos[0] - self.enemy_boundary_x
+                
+            #only on our side    
+            if dist_to_enemy > 0:
+                features['distance_to_enemy_side'] = float(dist_to_enemy)
+                
+                
+        #distance to food - prefer food in my zone        
         if len(food_list) > 0:
+            
+            food_list = self.get_food(successor).as_list()
             
             #gotta get food from my side of the map first
             zone_food = get_food_by_zone(food_list, self.walls, self.my_zone)
             
+            
             #if there is no food in my zone look all food
-            target_food = zone_food if zone_food else food_list
+            if len(zone_food)>2:
+                target_food = list(zone_food)
+            else:
+                target_food = list(food_list)
+            
+            
+            #target_food = zone_food if zone_food else food_list
             
             #avoid food that teammate is targeting
             teammate_target = self._get_teammate_target()
@@ -738,7 +783,7 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
     
         #distance to capsules
         capsules = self.get_capsules(successor)
-        if my_state.is_pacman and len(capsules) > 0:
+        if len(capsules) > 0:
             min_capsule_dist = min(self.get_maze_distance(my_pos, cap) for cap in capsules)
             features['distance_to_capsule'] = float(min_capsule_dist)
     
@@ -762,7 +807,7 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
             min_ghost_dist = min(dists)
             
             #!"""" key variable as distance to "bravery" against ghosts
-            if min_ghost_dist <= 3:
+            if min_ghost_dist <= self.GHOST_DANGER_DIST:
             
                 features['dangerous_ghost'] = 1.0 / (min_ghost_dist + 0.1)
         
@@ -775,11 +820,20 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         #this is to avoiod collision betweeen two agents
         teammate_pos = self._get_teammate_position()
         
-        if teammate_pos:
-            dist_to_teammate = self.get_maze_distance(my_pos, teammate_pos)
+        #we dont want them attacking at the same place
+        if teammate_pos and my_state.is_pacman:
             
-            if dist_to_teammate <= 2:
-                features['too_close_teammate'] = 1.0 / (dist_to_teammate + 0.1)
+            #vertial distance penalitzation between the team
+            dist_to_teammate = self.get_maze_distance(my_pos, teammate_pos)
+            vertical_dist = abs(my_pos[1] - teammate_pos[1])
+            
+                                   
+            if dist_to_teammate <= 1:
+                features['too_close_teammate'] = 3.0
+            
+            if vertical_dist <= 2:
+                
+                features['too_close_teammate'] = float(3 - vertical_dist)
         
         return features
     
@@ -812,16 +866,17 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         weights = {
         
             'successor_score': 100.0,
-            'distance_to_food': -6.0,
-            'distance_to_capsule': -2.5,
-            'distance_to_home': -0.6,
-            'num_carrying': 2.0,
-            'dangerous_ghost': -90.0,
-            'scared_ghost': 120.0,
-            'stop': -10.0,
-            'forward': 8.0,
-            'reverse': -5.0,
-            'too_close_teammate': -20.0,  #we avoid clustering 
+            'distance_to_food': -25.0, #food and points its superimportant
+            'distance_to_capsule': -40.0,
+            'distance_to_home': -10.0, #im comming home for christmas
+            'num_carrying': 5.0,
+            'dangerous_ghost': -220.0,
+            'scared_ghost': 350.0,
+            'stop': -50.0,
+            'forward': 10.0,
+            'reverse': -15.0,
+            'distance_to_enemy_side': -20.0,
+            'too_close_teammate': -35,  #we avoid clustering of pacmans/ghosts
             }
     
         my_state = game_state.get_agent_state(self.index)
@@ -829,8 +884,8 @@ class OffensiveReflexAgent(ReflexCaptureAgent):
         #incentivize go enemy zone
         if not my_state.is_pacman:
             
-            weights['distance_to_food'] = -5.0
-            weights['distance_to_capsule'] = -4.0
+            weights['distance_to_food'] = -8.0
+            weights['distance_to_capsule'] = -10.0
             
         if not (my_state.is_pacman and my_state.num_carrying > 0):
             
@@ -860,11 +915,11 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
     
     #thresholds to decide actions
     
-    ATTACK_TURNS = 200   #turns to be aggressive at start
+    ATTACK_TURNS = 40   #turns to be aggressive at start
     CHASE_DISTANCE = 5     #distance to chase invaders directly
-    INTERCEPT_DISTANCE = 8    #max distance for intercept planning
-    CARRY_THRESHOLD = 4      #food to carry before returning home
-    GHOST_DANGER_DIST = 3        #distance to consider ghost dangerous
+    INTERCEPT_DISTANCE = 12    #max distance for intercept planning
+    CARRY_THRESHOLD = 3     #food to carry before returning home
+    GHOST_DANGER_DIST = 4     #distance to consider ghost dangerous
     
     def register_initial_state(self, game_state):
         """
@@ -907,12 +962,9 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
                 positions.append((boundary_x, y))
         
         return positions
-    
+        
     def choose_action(self, game_state):
-        """
-        Main decision function. Balances between defense and offense.
-        Both agents attack at the start of the game.
-        """
+        
         self.turns += 1
     
         my_state = game_state.get_agent_state(self.index)
@@ -922,32 +974,52 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
         #update team state for coordination as we seen before
         TeamState.agent_positions[self.index] = my_pos_int
     
-        #detect invaders
+        #detect invasors
         enemies = [game_state.get_agent_state(i) for i in self.get_opponents(game_state)]
         invaders = [e for e in enemies if e.is_pacman and e.get_position() is not None]
     
-        #check if current plan is still valid
+        #executing the main super-plan
         if self.plan:
-            if self._is_plan_valid(game_state, my_state, my_pos_int, invaders):
+            #patrol mode if no invasor
+            if self.plan_mode == 'intercept' and len(invaders) == 0 and self.ATTACK_TURNS == self.turns:
+                self._clear_plan()
+            elif self.plan_mode != 'intercept' and len(invaders) > 0:
+                 self._clear_plan() #avoid patrol and chase
+            elif self.plan_mode == 'return_home' and not my_state.is_pacman:
+                 self._clear_plan() 
+            
+            #kkeep the plan
+            
+            if self.plan:
                 action = self.plan.pop(0)
                 if action in game_state.get_legal_actions(self.index):
                     return action
-            self._clear_plan()
+                self._clear_plan() # Fallback si la acción no es legal
+
     
-        #""!!! if there are nearby invaders, handle them
+        
+        #priority active defense
         if len(invaders) > 0:
             closest_dist = min(self.get_maze_distance(my_pos, i.get_position()) for i in invaders)
-            #only defend if invader is close enough to be a real threat
-            if closest_dist <= self.CHASE_DISTANCE + 3:
+            
+            #go collapse invader
+            if closest_dist <= self.INTERCEPT_DISTANCE + 2: #more range
                 return self._handle_invaders(game_state, my_state, my_pos_int, invaders)
     
-        #"""!!!!: if carrying food, return home
+        #cash food for points
         if my_state.is_pacman and my_state.num_carrying >= self.CARRY_THRESHOLD:
             return self._plan_return_home(game_state, my_pos_int)
     
-        #""""!!!: ATTACK during early game or when no invaders
-        #this makes the defensive agent act as second attacker
-        return self._choose_offensive_action(game_state, my_state, my_pos_int) 
+        #patrol and attack handling
+        if self.turns < self.ATTACK_TURNS:
+            #choose action
+            return self._choose_offensive_action(game_state, my_state, my_pos_int)
+        else:
+            #defend actively by planning a patrol
+            return self._plan_patrol(game_state, my_pos_int)
+            
+        return self._defensive_reflex_action(game_state) #worst case scenario
+        
     
     def _is_plan_valid(self, game_state, my_state, my_pos, invaders):
         """
@@ -976,7 +1048,8 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
     
     def _handle_invaders(self, game_state, my_state, my_pos, invaders):
         """
-        Handles invaders based on their distance.
+        Handles invaders based on their distance. To not compute overload with BFS 
+        all the time.
         """
         
         #look foor the closest invader
@@ -986,11 +1059,11 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
         inv_dist = self.get_maze_distance(my_pos, inv_pos)
         
         #if invader is very close, chase directly using reflex
-        if inv_dist <= self.CHASE_DISTANCE:
+        if inv_dist <= self.CHASE_DISTANCE:#should be 6
             return self._chase_invader(game_state, my_pos, inv_pos)
         
         #if invader is at medium distance, plan interception
-        elif inv_dist <= self.INTERCEPT_DISTANCE:
+        elif inv_dist <= self.INTERCEPT_DISTANCE: #should be 10
             return self._plan_intercept(game_state, my_pos, inv_pos)
         
         #invader is far soo we use reflex basic defensive behavior to not overload with BFS calls
@@ -1022,6 +1095,44 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
                 best_action = action
         
         return best_action if best_action else random.choice(actions)
+        
+    
+    #kind of like a policeman in the neirborhood
+    def _plan_patrol(self, game_state, my_pos):
+        """
+        Plans a path to patrol the boundary positions around center map.
+        The target alternaates between the top and bottom of the boundary of the teams.
+        """
+        
+        #wee choose a patrol target (e.g., top/bottom boundary positions)
+        boundary_pos = self._calculate_boundary(game_state)
+        
+        if not boundary_pos:
+            return self._fallback_action(game_state)
+
+        #we get top/bottom boundary points
+        top_boundary = max(boundary_pos, key=lambda p: p[1])
+        bottom_boundary = min(boundary_pos, key=lambda p: p[1])
+
+        #alternate targets
+        if self.plan_target == top_boundary:
+            target = bottom_boundary
+        else:
+            target = top_boundary
+            
+        if my_pos == target: # If already at target, switch to the other
+             target = bottom_boundary if target == top_boundary else top_boundary
+        
+        #we use bfs
+        path = bfs_to_goal(my_pos, target, self.walls)
+        
+        if path:
+            self.plan = path
+            self.plan_mode = 'patrol'
+            self.plan_target = target
+            return self.plan.pop(0)
+        
+        return self._defensive_reflex_action(game_state) # Fallback to reflex
     
     def _plan_intercept(self, game_state, my_pos, inv_pos):
         
@@ -1170,12 +1281,12 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
         
         #weights for offensive behavior
         return {
-            'successor_score': 80.0,    #less than main agent
-            'distance_to_food': -6.0,   #
-            'dangerous_ghost': -90.0,
-            'stop': -10.0,
+            'successor_score': 70.0,    #less than main agent
+            'distance_to_food': -6.0,   #incentive food eating
+            'dangerous_ghost': -180.0,
+            'stop': -15.0,
             'forward': 4.0,
-            'reverse': -4.0,
+            'reverse': -6.0,
         }
 
     
@@ -1264,15 +1375,15 @@ class DefensiveReflexAgent(ReflexCaptureAgent):
         if self.turns < self.ATTACK_TURNS:
             on_defense_weight = 0
         else:
-            on_defense_weight = 30
+            on_defense_weight = 35
         
         """
         Weights for defensive evaluation.
         """
         return {
             'num_invaders': -1000,
-            'on_defense': 30,
-            'invader_distance': -10,
-            'stop': -100,
-            'reverse': -2
+            'on_defense': on_defense_weight,
+            'invader_distance': -12,
+            'stop': -1000,
+            'reverse': -40
         }
